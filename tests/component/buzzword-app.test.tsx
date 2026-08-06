@@ -5,6 +5,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BuzzwordApp } from "@/components/BuzzwordApp";
+import { findReferenceScenario } from "@/data/referenceScenarios";
 import { localAiOutput } from "../fixtures/model-fixtures";
 
 function mockFetch() {
@@ -56,12 +57,64 @@ describe("BuzzwordApp component", () => {
     const input = screen.getByLabelText(/source statement/i);
     const button = screen.getByRole("button", { name: /operationalise/i });
 
-    expect(button).toBeEnabled();
-    await userEvent.clear(input);
+    expect(button).toBeDisabled();
     expect(button).toBeDisabled();
     await userEvent.type(input, "I made a script that renames files.");
     expect(screen.getByText(/Source material utilisation: 37\/500/i)).toBeInTheDocument();
     expect(button).toBeEnabled();
+  });
+
+  it("starts with an unselected example picker", () => {
+    render(<BuzzwordApp />);
+
+    expect(screen.getByLabelText(/try an example/i)).toHaveDisplayValue("Choose an example...");
+    expect(screen.getByLabelText(/source statement/i)).toHaveValue("");
+  });
+
+  it("selecting an example populates source text without auto-generating", async () => {
+    const fetchMock = mockFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<BuzzwordApp />);
+    const scenario = findReferenceScenario("software-form-database");
+
+    await userEvent.selectOptions(screen.getByLabelText(/try an example/i), "software-form-database");
+
+    expect(screen.getByLabelText(/source statement/i)).toHaveValue(scenario?.source);
+    expect(screen.getByLabelText(/try an example/i)).toHaveDisplayValue(scenario?.label ?? "");
+    expect(screen.getByText(/Operationalise the source material/i)).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining("/api/larpify"), expect.anything());
+  });
+
+  it("selecting an example can populate locked facts", async () => {
+    render(<BuzzwordApp />);
+
+    await userEvent.selectOptions(screen.getByLabelText(/try an example/i), "hardware-esp32-temperature");
+
+    expect(screen.getByLabelText(/source statement/i)).toHaveValue("An ESP32 reads a temperature sensor.");
+    expect(screen.getByRole("button", { name: /remove ESP32/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /remove temperature sensor/i })).toBeInTheDocument();
+  });
+
+  it("keeps custom input until the user confirms replacement", async () => {
+    render(<BuzzwordApp />);
+    const input = screen.getByLabelText(/source statement/i);
+
+    await userEvent.type(input, "My custom source should stay here.");
+    await userEvent.selectOptions(screen.getByLabelText(/try an example/i), "office-printer-toner");
+
+    expect(input).toHaveValue("My custom source should stay here.");
+    expect(screen.getByText(/Replace your current source/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /replace source with example/i }));
+    expect(input).toHaveValue("The printer needed a new toner cartridge.");
+  });
+
+  it("randomises to a valid example", async () => {
+    render(<BuzzwordApp />);
+
+    await userEvent.click(screen.getByRole("button", { name: /randomise source material/i }));
+
+    expect(screen.getByLabelText(/source statement/i)).not.toHaveValue("");
+    expect(screen.getByLabelText(/try an example/i)).not.toHaveDisplayValue("Choose an example...");
   });
 
   it("switches to directed mode, expands direction controls, and preserves source text", async () => {
@@ -102,6 +155,7 @@ describe("BuzzwordApp component", () => {
 
   it("generates, shows output sections, and copies larpified text", async () => {
     render(<BuzzwordApp />);
+    await userEvent.type(screen.getByLabelText(/source statement/i), "I ran a 30M parameter LLM on an ESP32.");
     await userEvent.click(screen.getByRole("button", { name: /operationalise/i }));
 
     expect(await screen.findByText(/We are operationalising a 30M-parameter/i)).toBeInTheDocument();

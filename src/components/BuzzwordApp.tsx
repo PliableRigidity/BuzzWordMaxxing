@@ -10,7 +10,15 @@ import {
   Search,
   X,
 } from "lucide-react";
+import {
+  findReferenceScenario,
+  findReferenceScenarioBySource,
+  getRandomReferenceScenario,
+  groupReferenceScenarios,
+  type ReferenceScenario,
+} from "@/data/referenceScenarios";
 import { categories, categoryIds, defaultCategories, type CategoryId } from "@/lib/categories";
+import { getIntensityPolicy } from "@/lib/intensity";
 import {
   addRecentInjectorId,
   getPopularInjectors,
@@ -41,24 +49,6 @@ type ApiError = {
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 
-const sentencePresets = [
-  "I ran a 30M parameter LLM on an ESP32.",
-  "My Raspberry Pi turns on my bedroom light.",
-  "I made a script that renames files.",
-  "We installed Microsoft Teams.",
-  "The website uses an OpenAI API call.",
-  "I host a dashboard on an old laptop.",
-];
-
-const referenceScenarios = [
-  { label: "30M parameter LLM on an ESP32", value: sentencePresets[0] },
-  { label: "Raspberry Pi bedroom light", value: sentencePresets[1] },
-  { label: "File-renaming script", value: sentencePresets[2] },
-  { label: "Microsoft Teams installation", value: sentencePresets[3] },
-  { label: "OpenAI API wrapper", value: sentencePresets[4] },
-  { label: "Dashboard hosted on an old laptop", value: sentencePresets[5] },
-];
-
 const loadingMessages = [
   "Analysing source statement...",
   "Identifying transformation domains...",
@@ -70,29 +60,29 @@ const loadingMessages = [
 ];
 
 const intensityLabels = [
-  "Light Optimisation",
-  "Light Optimisation",
-  "Organisational",
-  "Organisational",
-  "Venture-Backed",
+  "Minimal Optimisation",
+  "Professional Polish",
+  "Corporate Language",
+  "Business Transformation",
+  "Startup-Ready",
   "Venture-Backed",
   "Enterprise Transformation",
-  "Enterprise Transformation",
+  "Severe Abstraction",
   "Unrecoverable",
   "Post-Language",
 ];
 
 const intensityDescriptions = [
-  "A light coating of professional language with meaning mostly intact.",
-  "A light coating of professional language with meaning mostly intact.",
-  "The statement begins participating in the operating model.",
-  "The statement begins participating in the operating model.",
-  "Sufficient abstraction for a confident seed-stage memo.",
-  "Sufficient abstraction for a confident seed-stage memo.",
-  "Actionability is subordinated to transformation narrative.",
-  "Actionability is subordinated to transformation narrative.",
-  "Core meaning may remain available through forensic analysis.",
-  "Language continues after information has left the room.",
+  "Original wording and meaning remain almost entirely intact.",
+  "Light professional polish with the source structure still obvious.",
+  "Corporate wording appears, but the sentence remains immediately understandable.",
+  "Business-language abstraction with mild restructuring.",
+  "Startup-ready language with a clear original function still visible.",
+  "Venture-backed framing with more platform and workflow language.",
+  "Features become enterprise capabilities and strategic narratives.",
+  "Meaning requires effort to recover through dense abstraction.",
+  "The honest translation carries much of the recoverable meaning.",
+  "Only factual constraints are expected to survive.",
 ];
 
 const modeLabels: Record<GenerationMode, string> = {
@@ -118,8 +108,10 @@ const heroSlogan = {
 const scoreDescriptions: Record<string, string> = {
   buzzwordDensity: "Share of output occupied by strategically valuable terminology.",
   meaningRetained: "Estimated survival rate of the original proposition.",
+  originalWordingRetained: "Share of meaningful source terms that remain in the generated text.",
   corporateContamination: "Detected exposure to organisational language patterns.",
   larpIntensity: "Degree of professional unreality achieved by the transformation.",
+  abstractionDelta: "Estimated distance between the source sentence and generated abstraction.",
   sentenceRecoverability: "Probability that a normal person can reconstruct the source statement.",
 };
 
@@ -197,6 +189,7 @@ function Button({
   children,
   variant = "secondary",
   className = "",
+  disabled = false,
   ...props
 }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant }) {
   const variants: Record<ButtonVariant, string> = {
@@ -211,6 +204,7 @@ function Button({
   return (
     <button
       {...props}
+      disabled={Boolean(disabled)}
       className={classNames(
         "inline-flex h-10 items-center justify-center gap-2 rounded-md border px-4 text-sm font-semibold transition disabled:cursor-not-allowed",
         variants[variant],
@@ -414,6 +408,8 @@ function ChipInput({
 }
 
 function IntensityControl({ intensity, setIntensity }: { intensity: number; setIntensity: (value: number) => void }) {
+  const policy = getIntensityPolicy(intensity);
+
   return (
     <div>
       <div className="flex items-start justify-between gap-4">
@@ -434,6 +430,10 @@ function IntensityControl({ intensity, setIntensity }: { intensity: number; setI
         aria-valuetext={`${intensityLabels[intensity - 1]}. ${intensityDescriptions[intensity - 1]}`}
       />
       <p className="mt-2 text-sm leading-6 text-text-muted">{intensityDescriptions[intensity - 1]}</p>
+      <p className="mt-1 text-xs leading-5 text-text-muted">
+        Target: {policy.originalWordingRetention[0]}-{policy.originalWordingRetention[1]}% original wording, up to{" "}
+        {policy.maxLengthMultiplier}x source length.
+      </p>
     </div>
   );
 }
@@ -678,6 +678,12 @@ function SourcePanel({
   directionInputRef,
   recentInjectorIds,
   setRecentInjectorIds,
+  selectedReferenceId,
+  pendingReference,
+  selectReferenceScenario,
+  confirmReferenceReplacement,
+  randomiseSourceMaterial,
+  clearSourceMaterial,
 }: {
   input: string;
   setInput: (value: string) => void;
@@ -716,6 +722,12 @@ function SourcePanel({
   directionInputRef: RefObject<HTMLInputElement | null>;
   recentInjectorIds: string[];
   setRecentInjectorIds: (value: string[] | ((value: string[]) => string[])) => void;
+  selectedReferenceId: string;
+  pendingReference: ReferenceScenario | null;
+  selectReferenceScenario: (id: string) => void;
+  confirmReferenceReplacement: () => void;
+  randomiseSourceMaterial: () => void;
+  clearSourceMaterial: () => void;
 }) {
   const activeChips = [...presetChips, ...customStyleChips];
   const activeBuiltIns = resolveInjectors(presetChips);
@@ -728,6 +740,7 @@ function SourcePanel({
     ? `${factualConstraints.length} factual ${factualConstraints.length === 1 ? "constraint" : "constraints"} preserved`
     : "No factual constraints declared";
   const [injectorQuery, setInjectorQuery] = useState("");
+  const groupedReferenceScenarios = groupReferenceScenarios();
 
   function selectInjector(profile: InjectorProfile) {
     addPresetChip(profile.label);
@@ -803,28 +816,49 @@ function SourcePanel({
         {isLoading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
         {isLoading ? loadingMessage : "Operationalise"}
       </Button>
-      <div className="mt-7 flex flex-col gap-3 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between">
-        <label htmlFor="reference-scenario" className="text-sm font-semibold text-text-primary">
-          Reference scenario
-        </label>
-        <select
-          id="reference-scenario"
-          defaultValue=""
-          onChange={(event) => {
-            if (event.target.value) {
-              setInput(event.target.value);
-              event.target.value = "";
-            }
-          }}
-          className="w-full max-w-sm rounded-md border border-border bg-transparent px-3 py-2 text-sm text-text-secondary outline-none transition focus:border-accent sm:text-right"
-        >
-          <option value="">30M-parameter LLM on an ESP32</option>
-          {referenceScenarios.map((scenario) => (
-            <option key={scenario.label} value={scenario.value}>
-              {scenario.label}
-            </option>
-          ))}
-        </select>
+      <div className="mt-7 border-t border-border pt-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <label htmlFor="reference-scenario" className="text-sm font-semibold text-text-primary">
+            Try an example
+          </label>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+            <select
+              id="reference-scenario"
+              value={selectedReferenceId}
+              onChange={(event) => selectReferenceScenario(event.target.value)}
+              className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm text-text-secondary outline-none transition focus:border-accent sm:w-64"
+            >
+              <option value="">Choose an example...</option>
+              {groupedReferenceScenarios.map((group) => (
+                <optgroup key={group.category} label={group.category}>
+                  {group.scenarios.map((scenario) => (
+                    <option key={scenario.id} value={scenario.id}>
+                      {scenario.label}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            <div className="flex gap-2">
+              <Button type="button" variant="secondary" onClick={randomiseSourceMaterial} className="h-9 px-3">
+                Randomise source material
+              </Button>
+              <Button type="button" variant="ghost" onClick={clearSourceMaterial} className="h-9 px-2">
+                Clear
+              </Button>
+            </div>
+          </div>
+        </div>
+        {pendingReference ? (
+          <div className="mt-3 flex flex-col gap-2 rounded-md border border-warning/50 bg-warning/10 p-3 text-sm text-text-secondary sm:flex-row sm:items-center sm:justify-between">
+            <p>
+              Replace your current source with <span className="font-medium text-text-primary">{pendingReference.label}</span>?
+            </p>
+            <Button type="button" variant="secondary" onClick={confirmReferenceReplacement} className="h-9 px-3">
+              Replace source with example
+            </Button>
+          </div>
+        ) : null}
       </div>
       <div className="mt-5 min-h-0 flex-1 overflow-visible lg:overflow-auto">
         <div>
@@ -1080,6 +1114,8 @@ function OutputPanel({
   input: string;
 }) {
   const currentRecoverability = result ? recoverability(result.scores) : 0;
+  const wordingRetained = result?.scores.originalWordingRetained ?? result?.scores.meaningRetained ?? 0;
+  const abstraction = result?.scores.abstractionDelta ?? result?.scores.larpIntensity ?? 0;
   const domainCaption =
     mode === "auto"
       ? "Automatically selected by the linguistic orchestration layer."
@@ -1174,11 +1210,17 @@ function OutputPanel({
                 description={scoreDescriptions.meaningRetained}
               />
               <ProgressMetric
+                label="Original Wording Retained"
+                value={wordingRetained}
+                description={scoreDescriptions.originalWordingRetained}
+              />
+              <ProgressMetric
                 label="Corporate Contamination"
                 value={result.scores.corporateContamination}
                 description={scoreDescriptions.corporateContamination}
               />
               <ProgressMetric label="LARP Intensity" value={result.scores.larpIntensity} description={scoreDescriptions.larpIntensity} />
+              <ProgressMetric label="Abstraction Delta" value={abstraction} description={scoreDescriptions.abstractionDelta} />
               <div className="sm:col-span-2">
                 <ProgressMetric
                   label="Sentence Recoverability"
@@ -1230,8 +1272,8 @@ function OutputPanel({
 }
 
 export function BuzzwordApp() {
-  const [input, setInput] = useState(sentencePresets[0]);
-  const [factualConstraints, setFactualConstraints] = useState<string[]>(["ESP32", "30M parameter"]);
+  const [input, setInput] = useState("");
+  const [factualConstraints, setFactualConstraints] = useState<string[]>([]);
   const [factInput, setFactInput] = useState("");
   const [mode, setMode] = useState<GenerationMode>("auto");
   const [styleDirection, setStyleDirection] = useState("");
@@ -1240,18 +1282,8 @@ export function BuzzwordApp() {
   const [chipInput, setChipInput] = useState("");
   const [selectedCategories, setSelectedCategories] = useState<CategoryId[]>(defaultCategories);
   const [showMore, setShowMore] = useState(false);
-  const [recentInjectorIds, setRecentInjectorIds] = useState<string[]>(() => {
-    if (typeof window === "undefined") {
-      return [];
-    }
-
-    try {
-      const parsed = JSON.parse(window.localStorage.getItem("buzzwordmaxxing:recent-injectors") ?? "[]");
-      return sanitiseRecentInjectorIds(Array.isArray(parsed) ? parsed : []);
-    } catch {
-      return [];
-    }
-  });
+  const [recentInjectorIds, setRecentInjectorIds] = useState<string[]>([]);
+  const recentInjectorIdsLoaded = useRef(false);
   const [intensity, setIntensity] = useState(7);
   const [result, setResult] = useState<LarpifyResponse | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
@@ -1261,6 +1293,8 @@ export function BuzzwordApp() {
   const [generatedAt, setGeneratedAt] = useState<string | null>(null);
   const [directionOpen, setDirectionOpen] = useState(false);
   const [governanceOpen, setGovernanceOpen] = useState(false);
+  const [selectedReferenceId, setSelectedReferenceId] = useState("");
+  const [pendingReferenceId, setPendingReferenceId] = useState("");
   const directionInputRef = useRef<HTMLInputElement | null>(null);
   const [health, setHealth] = useState<HealthState>({
     status: "Checking Local Alignment...",
@@ -1286,6 +1320,25 @@ export function BuzzwordApp() {
   }, []);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const parsed = JSON.parse(window.localStorage.getItem("buzzwordmaxxing:recent-injectors") ?? "[]");
+        setRecentInjectorIds(sanitiseRecentInjectorIds(Array.isArray(parsed) ? parsed : []));
+      } catch {
+        setRecentInjectorIds([]);
+      } finally {
+        recentInjectorIdsLoaded.current = true;
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!recentInjectorIdsLoaded.current) {
+      return;
+    }
+
     window.localStorage.setItem("buzzwordmaxxing:recent-injectors", JSON.stringify(sanitiseRecentInjectorIds(recentInjectorIds)));
   }, [recentInjectorIds]);
 
@@ -1309,6 +1362,71 @@ export function BuzzwordApp() {
 
       return [...current, id];
     });
+  }
+
+  function clearGeneratedState() {
+    setResult(null);
+    setError(null);
+    setCopied(false);
+    setGeneratedAt(null);
+  }
+
+  function handleInputChange(value: string) {
+    setInput(value);
+    setSelectedReferenceId(findReferenceScenarioBySource(value)?.id ?? "");
+    setPendingReferenceId("");
+  }
+
+  function applyReferenceScenario(scenario: ReferenceScenario) {
+    setInput(scenario.source);
+    setFactualConstraints([...(scenario.lockedFacts ?? [])]);
+    setPresetChips([...(scenario.suggestedProfiles ?? [])]);
+    setSelectedReferenceId(scenario.id);
+    setPendingReferenceId("");
+    clearGeneratedState();
+  }
+
+  function selectReferenceScenario(id: string) {
+    const scenario = findReferenceScenario(id);
+
+    if (!scenario) {
+      setSelectedReferenceId("");
+      setPendingReferenceId("");
+      return;
+    }
+
+    if (input.trim() && findReferenceScenarioBySource(input)?.id !== scenario.id) {
+      setSelectedReferenceId("");
+      setPendingReferenceId(scenario.id);
+      return;
+    }
+
+    applyReferenceScenario(scenario);
+  }
+
+  function confirmReferenceReplacement() {
+    const scenario = findReferenceScenario(pendingReferenceId);
+
+    if (scenario) {
+      applyReferenceScenario(scenario);
+    }
+  }
+
+  function randomiseSourceMaterial() {
+    const currentScenario = selectedReferenceId || findReferenceScenarioBySource(input)?.id;
+    const scenario = getRandomReferenceScenario(currentScenario);
+
+    if (scenario) {
+      applyReferenceScenario(scenario);
+    }
+  }
+
+  function clearSourceMaterial() {
+    setInput("");
+    setFactualConstraints([]);
+    setSelectedReferenceId("");
+    setPendingReferenceId("");
+    clearGeneratedState();
   }
 
   function handleModeChange(nextMode: GenerationMode) {
@@ -1418,6 +1536,8 @@ export function BuzzwordApp() {
     setGeneratedAt(null);
     setDirectionOpen(false);
     setGovernanceOpen(false);
+    setSelectedReferenceId("");
+    setPendingReferenceId("");
   }
 
   return (
@@ -1431,7 +1551,7 @@ export function BuzzwordApp() {
         >
           <SourcePanel
             input={input}
-            setInput={setInput}
+            setInput={handleInputChange}
             mode={mode}
             setMode={handleModeChange}
             styleDirection={styleDirection}
@@ -1467,6 +1587,12 @@ export function BuzzwordApp() {
             directionInputRef={directionInputRef}
             recentInjectorIds={recentInjectorIds}
             setRecentInjectorIds={setRecentInjectorIds}
+            selectedReferenceId={selectedReferenceId}
+            pendingReference={findReferenceScenario(pendingReferenceId) ?? null}
+            selectReferenceScenario={selectReferenceScenario}
+            confirmReferenceReplacement={confirmReferenceReplacement}
+            randomiseSourceMaterial={randomiseSourceMaterial}
+            clearSourceMaterial={clearSourceMaterial}
           />
 
           <OutputPanel

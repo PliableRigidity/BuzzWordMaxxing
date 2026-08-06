@@ -46,6 +46,7 @@ test("directed flow preserves source and sends selected profile", async ({ page 
 
 test("governed flow selects microcontroller profile and locked facts", async ({ page }) => {
   await page.goto("/");
+  await page.getByLabel("Try an example").selectOption("hardware-esp32-temperature");
   await page.getByRole("tab", { name: "Governed" }).click();
   await page.getByRole("button", { name: /Transformation direction/i }).click();
   await page.getByRole("button", { name: "Browse capability library" }).click();
@@ -66,6 +67,7 @@ test("fallback flow remains usable", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.getByText("Fallback transformation layer active")).toBeVisible();
+  await page.getByLabel("Source statement").fill("A small server hosts a dashboard at home.");
   await page.getByRole("button", { name: "Operationalise" }).click();
   await expect(page.getByText(/Fallback LARP/i)).toBeVisible();
   await expect(page.getByText("Local language generation is unavailable.")).toBeVisible();
@@ -87,6 +89,7 @@ test("model failure and retry recovers without refresh", async ({ page }) => {
   });
 
   await page.goto("/");
+  await page.getByLabel("Source statement").fill("The team moved the deadline to next month.");
   await page.getByRole("button", { name: "Operationalise" }).click();
   await expect(page.getByText("Local alignment dependency unavailable")).toBeVisible();
   await page.getByRole("button", { name: "Retry inference" }).click();
@@ -131,7 +134,8 @@ test("refresh during generation recovers cleanly", async ({ page }) => {
     await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(successfulResponse) });
   });
   await page.goto("/");
+  await page.getByLabel("Source statement").fill("A scheduled task sends an email every morning.");
   await page.getByRole("button", { name: "Operationalise" }).click();
   await page.reload();
-  await expect(page.getByRole("button", { name: "Operationalise" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Operationalise" })).toBeVisible();
 });

@@ -17,6 +17,8 @@ export const scoreSchema = z.object({
   meaningRetained: z.number(),
   corporateContamination: z.number(),
   larpIntensity: z.number(),
+  originalWordingRetained: z.number().optional(),
+  abstractionDelta: z.number().optional(),
 });
 
 export const modelOutputSchema = z.object({

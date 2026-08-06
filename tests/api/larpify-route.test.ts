@@ -95,6 +95,45 @@ describe("larpify API route", () => {
     expect(payload.larpified).toContain("ESP32");
   });
 
+  it("repairs low-intensity outputs that drift into extreme abstraction", async () => {
+    const extremeOutput = {
+      ...localAiOutput,
+      larpified:
+        "We're operationalising a paradigm-shifting enterprise-grade orchestration ecosystem for mission-critical applications.",
+      honestTranslation: "I made a script that renames files.",
+      scores: { buzzwordDensity: 95, meaningRetained: 25, corporateContamination: 90, larpIntensity: 90 },
+      usedBuzzwords: ["paradigm-shifting", "enterprise-grade", "orchestration ecosystem", "mission-critical"],
+    };
+    const repairedOutput = {
+      ...localAiOutput,
+      larpified: "I made a script that renames files with a slightly clearer workflow.",
+      honestTranslation: "I made a script that renames files.",
+      scores: { buzzwordDensity: 8, meaningRetained: 96, corporateContamination: 12, larpIntensity: 10 },
+      usedBuzzwords: ["workflow"],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockImplementationOnce(() => jsonResponse(ollamaResponse(extremeOutput)))
+      .mockImplementationOnce(() => jsonResponse(ollamaResponse(repairedOutput)));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const response = await POST(
+      request({
+        ...validRequest,
+        input: "I made a script that renames files.",
+        intensity: 1,
+        lockedFacts: [],
+      }),
+    );
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(payload.larpified).toMatch(/^I made a script/);
+    expect(payload.larpified).not.toContain("enterprise-grade");
+    expect(payload.scores.originalWordingRetained).toBeGreaterThan(70);
+  });
+
   it("returns a controlled error when malformed JSON repair also fails", async () => {
     vi.stubGlobal(
       "fetch",

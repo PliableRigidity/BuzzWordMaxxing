@@ -1,4 +1,6 @@
-import { buildRepairPrompt, buildSystemPrompt, buildUserPrompt } from "./prompt";
+import { generateFallback } from "./fallback";
+import { validateIntensityCompliance } from "./intensity";
+import { buildLowIntensityRepairPrompt, buildRepairPrompt, buildSystemPrompt, buildUserPrompt } from "./prompt";
 import { adjustScores } from "./scoring";
 import type { LarpifyRequest, LarpifyResponse, ModelOutput } from "./schema";
 import { modelOutputSchema } from "./schema";
@@ -114,6 +116,34 @@ async function parseWithRepair(params: { raw: string; baseUrl: string; model: st
   }
 }
 
+async function repairLowIntensityOutput(params: {
+  request: LarpifyRequest;
+  selection: ReturnType<typeof selectVocabulary>;
+  output: ModelOutput;
+  warnings: readonly string[];
+  baseUrl: string;
+  model: string;
+}) {
+  try {
+    const repaired = await postGenerate({
+      baseUrl: params.baseUrl,
+      model: params.model,
+      system: buildSystemPrompt(),
+      prompt: buildLowIntensityRepairPrompt({
+        request: params.request,
+        badOutput: params.output.larpified,
+        warnings: params.warnings,
+        selection: params.selection,
+      }),
+      timeoutMs: 12000,
+    });
+
+    return parseWithRepair({ raw: repaired, baseUrl: params.baseUrl, model: params.model });
+  } catch {
+    return null;
+  }
+}
+
 export async function generateWithOllama(request: LarpifyRequest): Promise<LarpifyResponse> {
   const { baseUrl, model } = getOllamaConfig();
   const selection = selectVocabulary({
@@ -131,7 +161,30 @@ export async function generateWithOllama(request: LarpifyRequest): Promise<Larpi
     system: buildSystemPrompt(),
     prompt: buildUserPrompt(request, selection),
   });
-  const output: ModelOutput = await parseWithRepair({ raw, baseUrl, model });
+  let output: ModelOutput = await parseWithRepair({ raw, baseUrl, model });
+  const compliance = validateIntensityCompliance({
+    source: request.input,
+    output: output.larpified,
+    intensity: request.intensity,
+    lockedFacts: request.lockedFacts,
+  });
+
+  if (request.intensity <= 3 && !compliance.ok) {
+    const repaired = await repairLowIntensityOutput({
+      request,
+      selection,
+      output,
+      warnings: compliance.warnings,
+      baseUrl,
+      model,
+    });
+
+    if (!repaired) {
+      return generateFallback(request, model);
+    }
+
+    output = repaired;
+  }
   const adjusted = adjustScores({
     input: request.input,
     output,
@@ -144,6 +197,8 @@ export async function generateWithOllama(request: LarpifyRequest): Promise<Larpi
     meaningRetained: adjusted.meaningRetained,
     corporateContamination: adjusted.corporateContamination,
     larpIntensity: adjusted.larpIntensity,
+    originalWordingRetained: adjusted.originalWordingRetained,
+    abstractionDelta: adjusted.abstractionDelta,
   };
 
   return {

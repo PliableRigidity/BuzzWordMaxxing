@@ -21,6 +21,7 @@ test("desktop and mobile stable states render without blank screenshots", async 
     await page.goto("/");
     await expectNonBlankScreenshot(page);
 
+    await page.getByLabel("Source statement").fill("I built a dashboard that displays sales figures.");
     await page.getByRole("button", { name: "Operationalise" }).click();
     await expect(page.getByText(/We are operationalising/i)).toBeVisible();
     await expectNonBlankScreenshot(page);
@@ -46,6 +47,7 @@ test("directed mode, profile library, and error state have stable screenshots", 
     });
   });
   await page.keyboard.press("Escape");
+  await page.getByLabel("Source statement").fill("The city launched an app for reporting potholes.");
   await page.getByRole("button", { name: "Operationalise" }).click();
   await expect(page.getByText("Local alignment dependency unavailable.")).toBeVisible();
   await expectNonBlankScreenshot(page);

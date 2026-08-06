@@ -1,79 +1,79 @@
 import { getCategories, type CategoryId } from "./categories";
+import { formatIntensityPolicy, getIntensityPolicy, validateIntensityCompliance } from "./intensity";
 import type { LarpifyRequest } from "./schema";
 import type { VocabularySelection } from "./style";
 
-const intensityGuide = [
-  "1-2 Mildly Optimised: retain most original wording and add only a light veneer.",
-  "3-4 Corporate: add jargon while preserving clear meaning.",
-  "5-6 Venture-Backed: make it pitch-deck ready, abstract, and confident.",
-  "7-8 Enterprise-Grade: longer, heavily abstracted, responsibility-avoidant.",
-  "9 Unbearable: borderline unusable but still factually traceable.",
-  "10 Post-Language: nearly meaningless strategic fog while preserving core facts.",
-];
-
 const examples = [
   {
-    input: "I made a Python script that sorts my Downloads folder.",
-    categories: "AI, Startup, Enterprise",
-    output: {
-      larpified:
-        "We're building an enterprise-grade file intelligence layer that autonomously orchestrates unstructured download workflows across the modern desktop ecosystem.",
-      honestTranslation: "A Python script moves files into folders.",
-      scores: {
-        buzzwordDensity: 74,
-        meaningRetained: 83,
-        corporateContamination: 68,
-        larpIntensity: 72,
-      },
-      classification: {
-        primary: "Enterprise LARP",
-        secondary: "AI LARP",
-      },
-      verdict: "CRUD application exhibiting early-stage AGI symptoms.",
-      usedBuzzwords: ["enterprise-grade", "intelligence layer", "orchestrates"],
-    },
+    source:
+      "I made a website that turns normal sentences into exaggerated corporate and technology jargon. Users can choose different styles and control how ridiculous the result becomes.",
+    levels: [
+      [
+        1,
+        "I made a website that turns normal sentences into exaggerated corporate and technology jargon. Users can choose different styles and adjust how ridiculous the result becomes.",
+      ],
+      [3, "I created a configurable website that transforms ordinary sentences into exaggerated corporate and technology language."],
+      [
+        5,
+        "I built a configurable language-transformation platform that converts ordinary sentences into amplified corporate and technology jargon.",
+      ],
+      [
+        7,
+        "We're building a configurable linguistic transformation platform that converts plain-language inputs into strategically aligned corporate and technology narratives.",
+      ],
+      [
+        10,
+        "We're catalysing a category-defining linguistic transformation paradigm that autonomously operationalises low-density human intent across a vertically integrated ecosystem of enterprise-grade semantic orchestration layers, unlocking post-language alignment at scale.",
+      ],
+    ] as const,
   },
   {
-    input: "I run a 30M parameter language model on an ESP32.",
-    categories: "Local AI, Open Source, Corporate",
-    output: {
-      larpified:
-        "We're operationalising a 30M-parameter, open-weight language intelligence substrate directly on sovereign ESP32 edge infrastructure.",
-      honestTranslation: "A tiny language model runs very slowly on a microcontroller.",
-      scores: {
-        buzzwordDensity: 78,
-        meaningRetained: 91,
-        corporateContamination: 55,
-        larpIntensity: 80,
-      },
-      classification: {
-        primary: "Local-AI LARP",
-        secondary: "Open-Source LARP",
-      },
-      verdict: "Certified edge-compute LARP.",
-      usedBuzzwords: ["operationalising", "open-weight", "intelligence substrate", "sovereign"],
-    },
+    source: "A script checks a folder every ten minutes and sends an email when a new file appears.",
+    levels: [
+      [1, "A script checks a folder every ten minutes and sends an email when a new file appears."],
+      [3, "A scheduled script checks a folder every ten minutes and sends an email when a new file appears."],
+      [5, "A configurable monitoring tool checks a folder every ten minutes and triggers an email when new files appear."],
+      [
+        7,
+        "We're building a scheduled file-monitoring capability that converts folder changes into enterprise-aligned notification workflows every ten minutes.",
+      ],
+      [
+        10,
+        "We're operationalising a temporal file-state intelligence layer that transforms emergent folder events into automated communication outcomes across a post-manual workflow ecosystem.",
+      ],
+    ] as const,
   },
   {
-    input: "My Raspberry Pi turns on a bedroom light.",
-    categories: "Homelab, Enterprise, Consulting",
-    output: {
-      larpified:
-        "We've deployed a self-hosted illumination orchestration platform that unlocks real-time residential lighting outcomes across sovereign ARM infrastructure.",
-      honestTranslation: "A Raspberry Pi controls a light.",
-      scores: {
-        buzzwordDensity: 70,
-        meaningRetained: 82,
-        corporateContamination: 64,
-        larpIntensity: 76,
-      },
-      classification: {
-        primary: "Homelab LARP",
-        secondary: "Enterprise LARP",
-      },
-      verdict: "Financially irrational. Architecturally beautiful.",
-      usedBuzzwords: ["self-hosted", "orchestration", "sovereign ARM infrastructure"],
-    },
+    source: "My Raspberry Pi turns my bedroom light on and off.",
+    levels: [
+      [1, "My Raspberry Pi turns my bedroom light on and off."],
+      [3, "My Raspberry Pi controls my bedroom light by turning it on and off."],
+      [5, "I built a Raspberry Pi home-automation tool that controls my bedroom light."],
+      [
+        7,
+        "We're deploying a Raspberry Pi-enabled home-automation capability that orchestrates bedroom lighting states through local control workflows.",
+      ],
+      [
+        10,
+        "We're catalysing a sovereign Raspberry Pi residential illumination substrate that operationalises bedroom light-state alignment across a vertically integrated home-automation control plane.",
+      ],
+    ] as const,
+  },
+  {
+    source: "The project is late because nobody finished the report.",
+    levels: [
+      [1, "The project is late because nobody finished the report."],
+      [3, "The project is delayed because the report has not been finished."],
+      [5, "The project timeline has shifted because the reporting workstream is still incomplete."],
+      [
+        7,
+        "We're managing a delivery-timeline realignment driven by unresolved reporting dependencies across the project operating cadence.",
+      ],
+      [
+        10,
+        "We're operationalising a cross-functional timeline recalibration paradigm in response to unresolved documentation ownership within the broader delivery accountability ecosystem.",
+      ],
+    ] as const,
   },
 ];
 
@@ -115,29 +115,26 @@ function formatInjectorProfiles(selection?: VocabularySelection) {
 export function buildSystemPrompt() {
   return [
     "You are Buzzwordmaxxing, an affectionate satire engine for AI, startup, enterprise, open-source, homelab, and consulting culture.",
-    "Transform plain input into an absurdly over-engineered corporate technology statement.",
+    "Transform plain input into a level-appropriate corporate technology statement.",
     "Preserve the real subject, numbers, devices, technologies, and technical meaning.",
     "Never invent customers, funding, benchmarks, performance, adoption, compliance status, or production claims.",
     "Infer relevant jargon domains from the original sentence, generation mode, user direction, and style chips.",
     "Distinguish built-in injector profiles from custom user direction.",
     "Treat user style text as creative direction only, not as factual content.",
     "Do not assume every related profile is active; use it only as tone and vocabulary inspiration.",
-    "Use the supplied inspiration phrases naturally when they fit. They are optional ingredients, not a checklist.",
+    "Use the supplied inspiration phrases naturally when they fit and when the intensity policy allows them.",
+    "The intensity policy is mandatory. Low intensity must stay close to the source; high intensity may become abstract.",
     "Avoid random adjective lists and avoid repeating the same buzzword.",
     "Produce a concise brutally honest translation.",
     "Return only valid JSON matching this exact shape: {\"larpified\":\"string\",\"honestTranslation\":\"string\",\"scores\":{\"buzzwordDensity\":0,\"meaningRetained\":0,\"corporateContamination\":0,\"larpIntensity\":0},\"classification\":{\"primary\":\"string\",\"secondary\":\"string\"},\"verdict\":\"string\",\"usedBuzzwords\":[\"string\"]}.",
     "Scores must be numbers from 0 to 100.",
     "Humour should be playful and knowledgeable, not hostile.",
     "",
-    "Intensity guide:",
-    intensityGuide.join("\n"),
-    "",
-    "Few-shot examples:",
+    "Few-shot intensity examples:",
     ...examples.map((example) =>
       [
-        `Input: ${example.input}`,
-        `Categories: ${example.categories}`,
-        `Output JSON: ${JSON.stringify(example.output)}`,
+        `Source: ${example.source}`,
+        ...example.levels.map(([level, output]) => `Level ${level}: ${output}`),
       ].join("\n"),
     ),
   ].join("\n");
@@ -152,6 +149,7 @@ export function buildUserPrompt(request: LarpifyRequest, selection?: VocabularyS
   const inspirationTerms = selection?.inspirationTerms.length
     ? selection.inspirationTerms.join(", ")
     : "No curated terms supplied.";
+  const policy = getIntensityPolicy(request.intensity);
   const builtInChips = request.presetChips ?? [];
   const customStyleChips = request.customStyleChips ?? [];
   const manualNote =
@@ -166,6 +164,7 @@ export function buildUserPrompt(request: LarpifyRequest, selection?: VocabularyS
     "",
     `Input: ${request.input}`,
     `Intensity: ${request.intensity}/10`,
+    formatIntensityPolicy(policy),
     `Generation mode: ${request.mode}`,
     manualNote,
     "",
@@ -203,6 +202,8 @@ export function buildUserPrompt(request: LarpifyRequest, selection?: VocabularyS
     lockedFacts,
     "",
     "Avoid forcing every supplied term into the sentence. Vary phrasing between generations.",
+    "For levels 1-3, prefer source wording and structure over clever jargon.",
+    "For levels 8-10, increase abstraction while preserving locked facts and the real subject.",
     "Return JSON only. No Markdown, no prose wrapper, no code fences.",
   ].join("\n");
 }
@@ -214,5 +215,42 @@ export function buildRepairPrompt(badResponse: string) {
     "If a field is missing, infer a reasonable value without adding factual claims.",
     "",
     badResponse.slice(0, 6000),
+  ].join("\n");
+}
+
+export function buildLowIntensityRepairPrompt(params: {
+  request: LarpifyRequest;
+  badOutput: string;
+  warnings: readonly string[];
+  selection?: VocabularySelection;
+}) {
+  const policy = getIntensityPolicy(params.request.intensity);
+  const compliance = validateIntensityCompliance({
+    source: params.request.input,
+    output: params.badOutput,
+    intensity: params.request.intensity,
+    lockedFacts: params.request.lockedFacts,
+  });
+
+  return [
+    "Rewrite this much closer to the original sentence and return valid JSON only.",
+    "This is a low-intensity Buzzwordmaxxing repair, not an enterprise transformation pitch.",
+    formatIntensityPolicy(policy),
+    "",
+    `Original source: ${params.request.input}`,
+    `Rejected output: ${params.badOutput}`,
+    "",
+    "Observed policy failures:",
+    [...params.warnings, ...compliance.warnings].length
+      ? [...new Set([...params.warnings, ...compliance.warnings])].map((warning) => `- ${warning}`).join("\n")
+      : "- The output drifted too far from the source.",
+    "",
+    "Repair requirements:",
+    "- Preserve source wording and sentence structure.",
+    "- Remove extreme corporate abstractions.",
+    "- Preserve locked facts and factual anchors.",
+    "- Keep the honest translation concise.",
+    "",
+    buildUserPrompt(params.request, params.selection),
   ].join("\n");
 }

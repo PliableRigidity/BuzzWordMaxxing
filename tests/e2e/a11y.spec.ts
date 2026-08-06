@@ -37,6 +37,7 @@ test.describe("@a11y accessibility", () => {
   test("successful output and mobile layout pass axe scan", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/");
+    await page.getByLabel("Source statement").fill("A chatbot searches company documents before replying.");
     await page.getByRole("button", { name: "Operationalise" }).click();
     await expect(page.getByText(/We are operationalising/i)).toBeVisible();
     await expectNoSeriousAxeViolations(page);
@@ -51,6 +52,7 @@ test.describe("@a11y accessibility", () => {
       });
     });
     await page.goto("/");
+    await page.getByLabel("Source statement").fill("The printer needed a new toner cartridge.");
     await page.getByRole("button", { name: "Operationalise" }).click();
     await expect(page.getByText("Local alignment dependency unavailable.")).toBeVisible();
     await expect(page.getByRole("button", { name: "Retry inference" })).toBeVisible();

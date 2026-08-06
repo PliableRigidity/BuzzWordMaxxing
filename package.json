@@ -20,7 +20,8 @@
     "test:live-model": "vitest run tests/live",
     "test:coverage": "vitest run --coverage",
     "test:all": "npm run typecheck && npm run lint && npm run test && npm run build && npm run test:e2e && npm run test:a11y",
-    "evaluate:outputs": "tsx scripts/evaluate-outputs.ts"
+    "evaluate:outputs": "tsx scripts/evaluate-outputs.ts",
+    "evaluate:intensity": "tsx scripts/evaluate-intensity.ts"
   },
   "dependencies": {
     "lucide-react": "^1.28.0",
